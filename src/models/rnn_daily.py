@@ -1,60 +1,3 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-
-"""Example / benchmark for building a PTB LSTM model.
-
-Trains the model described in:
-(Zaremba, et. al.) Recurrent Neural Network Regularization
-http://arxiv.org/abs/1409.2329
-
-The data required for this example is in the data/ dir of the
-PTB dataset from Tomas Mikolov's webpage:
-
-http://www.fit.vutbr.cz/~imikolov/rnnlm/simple-examples.tgz
-
-There are 3 supported model configurations:
-===========================================
-| config | epochs | train | valid  | test
-===========================================
-| small  | 13     | 37.99 | 121.39 | 115.91
-| medium | 39     | 48.45 |  86.16 |  82.07
-| large  | 55     | 37.87 |  82.62 |  78.29
-The exact results may vary depending on the random initialization.
-
-The hyperparameters used in the model:
-- init_scale - the initial scale of the weights
-- learning_rate - the initial value of the learning rate
-- max_grad_norm - the maximum permissible norm of the gradient
-- num_layers - the number of LSTM layers
-- num_steps - the number of unrolled steps of LSTM
-- hidden_size - the number of LSTM units
-- max_epoch - the number of epochs trained with the initial learning rate
-- max_max_epoch - the total number of epochs for training
-- keep_prob - the probability of keeping weights in the dropout layer
-- lr_decay - the decay of the learning rate for each epoch after "max_epoch"
-- batch_size - the batch size
-
-To compile on CPU:
-  bazel build -c opt tensorflow/models/rnn/ptb:ptb_word_lm
-To compile on GPU:
-  bazel build -c opt tensorflow --config=cuda \
-    tensorflow/models/rnn/ptb:ptb_word_lm
-To run:
-  ./bazel-bin/.../ptb_word_lm --data_path=/tmp/simple-examples/data/
-
-"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -69,6 +12,7 @@ import tensorflow as tf
 from tensorflow.models.rnn import rnn_cell
 from tensorflow.models.rnn import seq2seq
 from tensorflow.models.rnn.ptb import reader
+from tensorflow.models.rnn import rnn
 
 flags = tf.flags
 logging = tf.logging
@@ -91,13 +35,13 @@ class DailyModel(object):
     self.num_stocks = config.num_stocks
     # vocab_size = config.vocab_size
 
-    self._input_data = tf.placeholder(tf.int32, [batch_size, num_steps])
-    self._targets = tf.placeholder(tf.int32, [batch_size, num_steps])
+    self._input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
+    self._targets = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
 
     # Slightly better results can be obtained with forget gate biases
     # initialized to 1 but the hyperparameters of the model would need to be
     # different than reported in the paper.
-    lstm_cell = rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
+    lstm_cell = rnn_cell.BasicLSTMCell(size, forget_bias=1.0)
     if is_training and config.keep_prob < 1:
       lstm_cell = rnn_cell.DropoutWrapper(
           lstm_cell, output_keep_prob=config.keep_prob)
@@ -111,7 +55,7 @@ class DailyModel(object):
     # inputs = tf.split(1, num_steps, tf.nn.embedding_lookup(embedding, self._input_data))
     inputs = tf.placeholder("float32", [batch_size, num_steps, num_stocks])
     inputs = [tf.squeeze(input_, [1]) for input_ in inputs]
-
+    # inputs should be a list of 1xnum_stock sized numpy arrays
     if is_training and config.keep_prob < 1:
       inputs = [tf.nn.dropout(input_, config.keep_prob) for input_ in inputs]
 
@@ -121,17 +65,16 @@ class DailyModel(object):
     #
     # The alternative version of the code below is:
     #
-    # from tensorflow.models.rnn import rnn
-    # outputs, states = rnn.rnn(cell, inputs, initial_state=self._initial_state)
-    outputs = []
-    states = []
-    state = self._initial_state
-    with tf.variable_scope("RNN"):
-      for time_step, input_ in enumerate(inputs):
-        if time_step > 0: tf.get_variable_scope().reuse_variables()
-        (cell_output, state) = cell(input_, state)
-        outputs.append(cell_output)
-        states.append(state)
+    outputs, states = rnn.rnn(cell, inputs, initial_state=self._initial_state)
+    # outputs = []
+    # states = []
+    # state = self._initial_state
+    # with tf.variable_scope("RNN"):
+    #   for time_step, input_ in enumerate(inputs):
+    #     if time_step > 0: tf.get_variable_scope().reuse_variables()
+    #     (cell_output, state) = cell(input_, state)
+    #     outputs.append(cell_output)
+    #     states.append(state)
 
     output = tf.reshape(tf.concat(1, outputs), [-1, size])
     # logits = tf.nn.xw_plus_b(output,
@@ -234,6 +177,21 @@ class LargeConfig(object):
   batch_size = 20
   vocab_size = 10000
 
+class DailyStockConfig(object):
+  """Medium config."""
+  init_scale = 0.05
+  learning_rate = 1.0
+  max_grad_norm = 5
+  num_layers = 2
+  num_steps = 35
+  hidden_size = 150
+  max_epoch = 6
+  max_max_epoch = 39
+  keep_prob = 0.5
+  lr_decay = 0.8
+  batch_size = 20
+  num_stocks = 200
+
 
 def run_epoch(session, m, data, eval_op, verbose=False):
   """Runs the model on the given data."""
@@ -277,8 +235,8 @@ def main(unused_args):
   raw_data = reader.ptb_raw_data(FLAGS.data_path)
   train_data, valid_data, test_data, _ = raw_data
 
-  config = get_config()
-  eval_config = get_config()
+  config = DailyStockConfig()
+  eval_config = DailyStockConfig()
   eval_config.batch_size = 1
   eval_config.num_steps = 1
 
@@ -286,10 +244,10 @@ def main(unused_args):
     initializer = tf.random_uniform_initializer(-config.init_scale,
                                                 config.init_scale)
     with tf.variable_scope("model", reuse=None, initializer=initializer):
-      m = PTBModel(is_training=True, config=config)
+      m = DailyModel(is_training=True, config=config)
     with tf.variable_scope("model", reuse=True, initializer=initializer):
-      mvalid = PTBModel(is_training=False, config=config)
-      mtest = PTBModel(is_training=False, config=eval_config)
+      mvalid = DailyModel(is_training=False, config=config)
+      mtest = DailyModel(is_training=False, config=eval_config)
 
     tf.initialize_all_variables().run()
 

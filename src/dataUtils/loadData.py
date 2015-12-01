@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 
-DATAROOT = "data/"
+DATAROOT = "../../data/"
 
 def close_prices(symbol):
     filename = DATAROOT + symbol + ".csv"
