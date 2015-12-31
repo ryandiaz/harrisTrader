@@ -191,8 +191,13 @@ class BasicRNNCell(RNNCell):
     """Most basic RNN: output = new_state = tanh(W * input + U * state + B)."""
     with tf.variable_scope(scope or type(self).__name__):  # "BasicRNNCell"
       pdb.set_trace()
+      # TODO: figure out why "inputs" is a numpy array not tf tensor
       output = tf.tanh(linear.linear([inputs, state], self._num_units, True))
     return output, output
+
+#TODO: figure out where the best place to put the placeholder is
+input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
+targets = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
 
 class BasicRNN(object):
 
@@ -202,25 +207,25 @@ class BasicRNN(object):
                                              stddev=1e-1), name='output_w')
         self.output_b = tf.Variable(tf.constant(0.1, shape=[num_stocks]))
 
-    def run_batch(self, is_training):
-        input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
-        targets = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
         cell = BasicRNNCell(hidden_size)
         self.initial_state = cell.zero_state(batch_size, tf.float32)
 
         total_loss = 0.0
         output = []
         for b in range(batch_size):
-            inputs = input_data[b]
-            targets = targets[b]
-            outputs, states = rnn(cell, inputs, initial_state=self.initial_state)
+            inputs = input_data[b,:,:]
+            target = targets[b,:,:]
+            outputs, self.final_states = rnn(cell, [input_data], initial_state=self.initial_state)
             output.append(outputs)
 
-        # may need to reshape output first
-        logits = tf.nn.xw_plus_b(output, self.output_w, self.output_b)
-        # TODO: produce output_stocks with these variables ^
 
-        loss = tf.reduce_sum((output_stocks - self._targets)**2) / num_steps / batch_size # mean squared error
+        # may need to reshape output first
+        #pdb.set_trace()
+        logits = tf.nn.xw_plus_b(output[0][0], self.output_w, self.output_b)
+        # TODO: produce output_stocks with these variables ^
+        output_stocks = logits
+        #pdb.set_trace()
+        self.loss = tf.reduce_sum(tf.pow((output_stocks - target),2))# / num_steps / batch_size # mean squared error
 
         # TODO: optimize loss
 
@@ -242,7 +247,7 @@ def run():
     for i in range(2):
         stock_batch = get_inputs()
         stock_inputs.append(stock_batch)
-        numpy_state, current_loss = session.run([loss, final_state], # TODO: properly define these targets
+        numpy_state, current_loss = session.run([model.loss, model.final_states], # TODO: properly define these targets
             # Initialize the LSTM state from the previous iteration.
             feed_dict={input_data: stock_batch[:,:-1,:], targets: stock_batch[:,1:,:]})
         total_loss += current_loss
