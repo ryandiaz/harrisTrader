@@ -191,7 +191,10 @@ class BasicRNNCell(RNNCell):
     """Most basic RNN: output = new_state = tanh(W * input + U * state + B)."""
     with tf.variable_scope(scope or type(self).__name__):  # "BasicRNNCell"
       pdb.set_trace()
-      # TODO: figure out why "inputs" is a numpy array not tf tensor
+      # DONE: figure out why "inputs" is a numpy array not tf tensor
+      # => needed to use tf.placeholder and tf.split
+      # TODO: inputs and state need the same dims
+      
       output = tf.tanh(linear.linear([inputs, state], self._num_units, True))
     return output, output
 
@@ -209,19 +212,21 @@ class BasicRNN(object):
 
         cell = BasicRNNCell(hidden_size)
         self.initial_state = cell.zero_state(batch_size, tf.float32)
+        self.input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
+        input_list = tf.split(1,num_steps,self.input_data)
 
         total_loss = 0.0
         output = []
-        for b in range(batch_size):
-            inputs = input_data[b,:,:]
-            target = targets[b,:,:]
-            outputs, self.final_states = rnn(cell, [input_data], initial_state=self.initial_state)
-            output.append(outputs)
+        # for b in range(batch_size):
+        #     inputs = input_data[b,:,:]
+        #     target = targets[b,:,:]
+        outputs, self.final_states = rnn(cell, input_list, initial_state=self.initial_state)
+            # output.append(outputs)
 
 
         # may need to reshape output first
-        #pdb.set_trace()
-        logits = tf.nn.xw_plus_b(output[0][0], self.output_w, self.output_b)
+        pdb.set_trace()
+        logits = tf.nn.xw_plus_b(outputs, self.output_w, self.output_b)
         # TODO: produce output_stocks with these variables ^
         output_stocks = logits
         #pdb.set_trace()
@@ -229,6 +234,7 @@ class BasicRNN(object):
 
         # TODO: optimize loss
 
+        self.init_op = tf.initialize_all_variables()
 
 def get_inputs():
     # for now generate random sequences
@@ -240,7 +246,7 @@ def run():
     session = tf.InteractiveSession()
     tf.Graph().as_default()
     model = BasicRNN(True, get_inputs())
-
+    session.run(model.init_op)
     # A numpy array holding the state of LSTM after each batch of words.
     total_loss = 0.0
     stock_inputs = []
@@ -249,7 +255,7 @@ def run():
         stock_inputs.append(stock_batch)
         numpy_state, current_loss = session.run([model.loss, model.final_states], # TODO: properly define these targets
             # Initialize the LSTM state from the previous iteration.
-            feed_dict={input_data: stock_batch[:,:-1,:], targets: stock_batch[:,1:,:]})
+            feed_dict={model.input_data: stock_batch[:,:-1,:], targets: stock_batch[:,1:,:]})
         total_loss += current_loss
 
 if __name__ == "__main__":
