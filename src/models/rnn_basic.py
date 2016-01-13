@@ -13,7 +13,7 @@ from tensorflow.models.rnn import linear
 
 import pdb
 
-batch_size = 1
+batch_size = 2
 num_stocks = 100
 num_steps = 3
 
@@ -190,21 +190,18 @@ class BasicRNNCell(RNNCell):
   def __call__(self, inputs, state, scope=None):
     """Most basic RNN: output = new_state = tanh(W * input + U * state + B)."""
     with tf.variable_scope(scope or type(self).__name__):  # "BasicRNNCell"
-      pdb.set_trace()
-      # DONE: figure out why "inputs" is a numpy array not tf tensor
-      # => needed to use tf.placeholder and tf.split
-      # TODO: inputs and state need the same dims
-      
       output = tf.tanh(linear.linear([inputs, state], self._num_units, True))
     return output, output
 
-#TODO: figure out where the best place to put the placeholder is
-input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
-targets = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
 
 class BasicRNN(object):
 
     def __init__(self, is_training, input_data):
+        self.targets = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
+        self.input_w = tf.Variable(tf.truncated_normal([num_stocks, hidden_size],
+                                             dtype=tf.float32,
+                                             stddev=1e-1), name='input_w')
+        self.input_b = tf.Variable(tf.constant(0.1, shape=[hidden_size]))
         self.output_w = tf.Variable(tf.truncated_normal([hidden_size, num_stocks],
                                              dtype=tf.float32,
                                              stddev=1e-1), name='output_w')
@@ -213,7 +210,9 @@ class BasicRNN(object):
         cell = BasicRNNCell(hidden_size)
         self.initial_state = cell.zero_state(batch_size, tf.float32)
         self.input_data = tf.placeholder(tf.float32, [batch_size, num_steps, num_stocks])
-        input_list = tf.split(1,num_steps,self.input_data)
+        input_trans = tf.matmul(tf.reshape(self.input_data, [batch_size*num_steps, num_stocks]), self.input_w) + self.input_b
+        #input_trans = tf.reshape(input_trans, [batch_size, num_steps, hidden_size])
+        input_list = tf.split(0,num_steps,input_trans)
 
         total_loss = 0.0
         output = []
@@ -225,12 +224,13 @@ class BasicRNN(object):
 
 
         # may need to reshape output first
-        pdb.set_trace()
+        outputs = tf.concat(0, outputs)
+        # pdb.set_trace()
         logits = tf.nn.xw_plus_b(outputs, self.output_w, self.output_b)
         # TODO: produce output_stocks with these variables ^
-        output_stocks = logits
+        output_stocks = tf.reshape(logits, [batch_size, num_steps, num_stocks])
         #pdb.set_trace()
-        self.loss = tf.reduce_sum(tf.pow((output_stocks - target),2))# / num_steps / batch_size # mean squared error
+        self.loss = tf.reduce_sum(tf.pow((output_stocks - self.targets),2))# / num_steps / batch_size # mean squared error
 
         # TODO: optimize loss
 
@@ -250,13 +250,12 @@ def run():
     # A numpy array holding the state of LSTM after each batch of words.
     total_loss = 0.0
     stock_inputs = []
-    for i in range(2):
-        stock_batch = get_inputs()
-        stock_inputs.append(stock_batch)
-        numpy_state, current_loss = session.run([model.loss, model.final_states], # TODO: properly define these targets
+    stock_batch = get_inputs()
+    stock_inputs.append(stock_batch)
+    current_loss = session.run([model.loss], # TODO: properly define these targets
             # Initialize the LSTM state from the previous iteration.
-            feed_dict={model.input_data: stock_batch[:,:-1,:], targets: stock_batch[:,1:,:]})
-        total_loss += current_loss
+            feed_dict={model.input_data: stock_batch[:,:-1,:], model.targets: stock_batch[:,1:,:]})
+    print(current_loss)
 
 if __name__ == "__main__":
     run()
