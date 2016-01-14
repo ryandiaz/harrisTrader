@@ -19,6 +19,9 @@ num_steps = 3
 
 hidden_size = 50
 
+learning_rate = 0.01
+max_grad_norm = 5
+
 def rnn(cell, inputs, initial_state=None, dtype=None,
         sequence_length=None, scope=None):
   """Creates a recurrent neural network specified by RNNCell "cell".
@@ -233,6 +236,19 @@ class BasicRNN(object):
         self.loss = tf.reduce_sum(tf.pow((output_stocks - self.targets),2))# / num_steps / batch_size # mean squared error
 
         # TODO: optimize loss
+        # self._lr = tf.Variable(0.1, trainable=False)
+        # tvars = tf.trainable_variables()
+        # # grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars), config.max_grad_norm)
+        # grads, _ = tf.gradients(self.loss, tvars)
+        # optimizer = tf.train.GradientDescentOptimizer(self.lr)
+        # self.train_op = optimizer.apply_gradients(zip(grads, tvars))
+
+        self.lr = tf.Variable(0.02, trainable=False)
+        tvars = tf.trainable_variables()
+        grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars),
+                                      5)
+        optimizer = tf.train.GradientDescentOptimizer(self.lr)
+        self.train_op = optimizer.apply_gradients(zip(grads, tvars))
 
         self.init_op = tf.initialize_all_variables()
 
@@ -245,17 +261,25 @@ def run():
     inputs = get_inputs()
     session = tf.InteractiveSession()
     tf.Graph().as_default()
-    model = BasicRNN(True, get_inputs())
+    model = BasicRNN(True, inputs)
     session.run(model.init_op)
     # A numpy array holding the state of LSTM after each batch of words.
     total_loss = 0.0
     stock_inputs = []
     stock_batch = get_inputs()
     stock_inputs.append(stock_batch)
+
+    for i in range(1000):
+        current_loss, _ = session.run([model.loss, model.train_op], # TODO: properly define these targets
+                # Initialize the LSTM state from the previous iteration.
+                feed_dict={model.input_data: stock_batch[:,:-1,:], model.targets: stock_batch[:,1:,:]})
+        print(current_loss)
+
     current_loss = session.run([model.loss], # TODO: properly define these targets
             # Initialize the LSTM state from the previous iteration.
             feed_dict={model.input_data: stock_batch[:,:-1,:], model.targets: stock_batch[:,1:,:]})
     print(current_loss)
+
 
 if __name__ == "__main__":
     run()
