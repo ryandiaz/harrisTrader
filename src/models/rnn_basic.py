@@ -259,20 +259,19 @@ def get_inputs():
     return np.random.rand(batch_size, num_steps+1, num_stocks)
 
 def run():
-
-    inputs = get_inputs()
+    start = "1995-01-01"
+    end = "2005-01-01"
+    symbols = symbols_in_int(start, end)
+    data = percent_changes(symbols)
     session = tf.InteractiveSession()
     tf.Graph().as_default()
     model = BasicRNN(True, inputs)
     session.run(model.init_op)
-    # A numpy array holding the state of LSTM after each batch of words.
     total_loss = 0.0
-    stock_inputs = []
-    stock_batch = get_inputs()
-    stock_inputs.append(stock_batch)
+    stock_batch = get_inputs() # TODO: replace with real data
 
     for i in range(1000):
-        current_loss, _ = session.run([model.loss, model.train_op], # TODO: properly define these targets
+        current_loss, _ = session.run([model.loss, model.train_op],
                 # Initialize the LSTM state from the previous iteration.
                 feed_dict={model.input_data: stock_batch[:,:-1,:], model.targets: stock_batch[:,1:,:]})
         print(current_loss)

@@ -12,11 +12,15 @@ def close_prices(symbol):
     history = pd.read_csv(filename, index_col=0)
     return history.values[:,5].size
 
-def percent_changes(symbol):
+def percent_change_single(symbol):
     filename = DATAROOT + symbol + ".csv"
     history = pd.read_csv(filename, index_col=0)
     np_data = history.values
     return (np_data[:,5] - np_data[:,1]) / np_data[:,1]
+
+def percent_changes(symbols):
+    return np.array([percent_change_single(s) for s in symbols])
+# with more data can't return everything in one matrix
 
 def get_list_dates(symbol):
     filename = DATAROOT + symbol + ".csv"
@@ -47,9 +51,10 @@ def stock_date_from_str(date_str):
     return datetime.strptime(date_str, "%Y-%m-%d")
 
 def main():
-    date_start = stock_date_from_str("1995-01-01")
-    date_end = stock_date_from_str("2005-01-01")
-    symbols = symbols_in_int(date_start, date_end)
+    start = stock_date_from_str("1995-01-01")
+    end = stock_date_from_str("2005-01-01")
+    symbols = symbols_in_int(start, end)
+    data = percent_changes(symbols)
     print "stocks in range", len(symbols)
     pdb.set_trace()
 
